@@ -1701,3 +1701,11 @@ When(/^I do a late hostname initialization of host "([^"]*)"$/) do |host|
   node.init_os_family(os_family)
   node.init_os_version(os_version)
 end
+
+
+Given(/^the word "([^']*)" does not occur more than (\d+) times in "(.*)" on "([^"]*)"$/) do |word, threshold, path, host|
+  count, _ret = get_target(host).run("grep -o -i \'#{word}\' #{path} | wc -l") #count actual number of occurences
+  #count, _ret = get_target(host).run("grep -c -i \'#{word}\' #{path}") #only count lines
+  count = count.to_i
+  raise "The word '#{word}' occured #{count} times, which is more more than #{threshold} times in file '#{path}'" if count > threshold
+end
