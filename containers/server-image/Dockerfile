@@ -11,6 +11,8 @@ ARG EXTRAPACKAGES
 
 COPY timezone_alignment.sh /usr/bin
 
+COPY healthcheck.sh /usr/bin
+
 # Copy timezone link update service
 COPY timezone_alignment.service /usr/lib/systemd/system/
 
@@ -74,6 +76,10 @@ COPY taskomatic_jmx.conf /usr/lib/systemd/system/taskomatic.service.d/jmx.conf
 
 RUN chmod -R 755 /usr/bin/timezone_alignment.sh
 
+# Set a warning message for interactive shells
+COPY motd /etc/motd
+RUN echo "cat /etc/motd" >/etc/sh.shrc.local
+
 RUN systemctl enable prometheus-node_exporter; \
     systemctl enable uyuni-setup; \
     systemctl enable timezone_alignment;
@@ -99,4 +105,4 @@ LABEL org.opensuse.reference="${REFERENCE_PREFIX}/server:${PRODUCT_VERSION}.%REL
 LABEL org.uyuni.version="${PRODUCT_VERSION}"
 
 CMD ["/usr/lib/systemd/systemd"]
-HEALTHCHECK --interval=5s --timeout=5s --retries=5 CMD ["/usr/bin/systemctl", "is-active", "multi-user.target"]
+HEALTHCHECK --interval=60s --timeout=120s --retries=5 --start-period=300s CMD ["/usr/bin/healthcheck.sh"]

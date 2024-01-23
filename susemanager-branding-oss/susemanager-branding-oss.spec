@@ -21,7 +21,7 @@
 %global wwwdocroot %{wwwroot}/htdocs
 
 Name:           susemanager-branding-oss
-Version:        5.0.2
+Version:        5.0.3
 Release:        1
 Summary:        SUSE Manager branding oss specific files
 License:        GPL-2.0-only
@@ -30,10 +30,9 @@ URL:            https://github.com/uyuni-project/uyuni
 Source0:        %{name}-%{version}.tar.gz
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 BuildArch:      noarch
-%if 0%{?sle_version} && !0%{?is_opensuse}
-BuildRequires:  SUSE-Manager-Server-release
-%else
-# This package is not needed for Uyuni, so we do not build it
+# This package is not needed for Uyuni, so we do not build it if
+# the OS is openSUSE or anything else that is not SLE
+%if 0%{?is_opensuse} || (!0%{?sle_version} && !0%{?is_opensuse})
 ExcludeArch:    i586 x86_64 ppc64le s390x aarch64
 %endif
 Provides:       susemanager-branding = %{version}
