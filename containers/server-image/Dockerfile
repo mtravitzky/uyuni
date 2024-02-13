@@ -57,6 +57,7 @@ RUN zypper --gpg-auto-import-keys --non-interactive install --auto-agree-with-li
     virtual-host-gatherer-Nutanix \
     virtual-host-gatherer-VMware \
     vim \
+    python3-pygit2 \
     ipmitool
 
 RUN sed -i 's/sysctl kernel.shmmax/#sysctl kernel.shmmax/g' /usr/bin/uyuni-setup-reportdb
@@ -98,7 +99,7 @@ LABEL org.opencontainers.image.description="All-in-one ${PRODUCT} server image"
 LABEL org.opencontainers.image.created="%BUILDTIME%"
 LABEL org.opencontainers.image.vendor="${VENDOR}"
 LABEL org.opencontainers.image.url="${URL}"
-LABEL org.opencontainers.image.version=5.0.2
+LABEL org.opencontainers.image.version=5.0.3
 LABEL org.openbuildservice.disturl="%DISTURL%"
 LABEL org.opensuse.reference="${REFERENCE_PREFIX}/server:${PRODUCT_VERSION}.%RELEASE%"
 # endlabelprefix

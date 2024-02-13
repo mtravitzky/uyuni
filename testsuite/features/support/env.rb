@@ -31,9 +31,6 @@ if ENV['REDIS_HOST']
   $stdout.puts('CODE COVERAGE MODE ENABLED.')
 end
 
-# Channels triggered by our tests to be synchronized
-$channels_synchronized = Set[]
-
 # Context per feature
 $context = {}
 
@@ -136,6 +133,8 @@ After do |scenario|
       path = "screenshots/#{scenario.name.tr(' ./', '_')}.png"
       # only click on Details when we have errors during bootstrapping and more Details available
       click_button('Details') if has_content?('Bootstrap Minions') && has_content?('Details')
+      # a TimeoutError may be raised while a page is still (re)loading
+      find('#page-body', wait: 3) if scenario.exception.is_a?(TimeoutError)
       page.driver.browser.save_screenshot(path)
       attach path, 'image/png'
       attach "#{Time.at(@scenario_start_time).strftime('%H:%M:%S:%L')} - #{Time.at(current_epoch).strftime('%H:%M:%S:%L')} | Current URL: #{current_url}", 'text/plain'
@@ -329,14 +328,6 @@ end
 
 Before('@debian12_ssh_minion') do
   skip_this_scenario unless ENV.key? ENV_VAR_BY_HOST['debian12_ssh_minion']
-end
-
-Before('@sle12sp4_minion') do
-  skip_this_scenario unless ENV.key? ENV_VAR_BY_HOST['sle12sp4_minion']
-end
-
-Before('@sle12sp4_ssh_minion') do
-  skip_this_scenario unless ENV.key? ENV_VAR_BY_HOST['sle12sp4_ssh_minion']
 end
 
 Before('@sle12sp5_minion') do

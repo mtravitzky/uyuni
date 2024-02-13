@@ -13,7 +13,7 @@ require 'date'
 
 Then(/^"([^"]*)" should have a FQDN$/) do |host|
   node = get_target(host)
-  result, return_code = node.run('date +%s; hostname -f; date +%s', check_errors: false)
+  result, return_code = node.run_local('date +%s; hostname -f; date +%s', check_errors: false)
   lines = result.split("\n")
   initial_time = lines[0]
   result = lines[1]
@@ -89,7 +89,7 @@ Then(/^it should be possible to reach the build sources$/) do
     # TODO: move that internal resource to some other external location
     log 'Sanity check not implemented, move resource to external network first'
   else
-    url = 'http://download.suse.de/ibs/SUSE/Products/SLE-SERVER/12-SP4/x86_64/product/media.1/products.key'
+    url = 'http://download.suse.de/ibs/SUSE/Products/SLE-SERVER/12-SP5/x86_64/product/media.1/products.key'
     get_target('server').run("curl --insecure --location #{url} --output /dev/null")
   end
 end
@@ -177,6 +177,17 @@ end
 When(/^I use spacewalk-common-channel to add channel "([^"]*)" with arch "([^"]*)"$/) do |child_channel, arch|
   command = "spacewalk-common-channels -u admin -p admin -a #{arch} #{child_channel}"
   $command_output, _code = get_target('server').run(command)
+end
+
+When(/^I use spacewalk-common-channel to add all "([^"]*)" channels with arch "([^"]*)"$/) do |channel, architecture|
+  channels_to_synchronize = CHANNEL_TO_SYNC_BY_OS_PRODUCT_VERSION.dig(product, "#{channel}-#{architecture}")
+  raise ScriptError, "Synchronization error, version type #{channel}-#{architecture} in #{product} product not found" if channels_to_synchronize.nil?
+
+  channels_to_synchronize.each do |os_product_version_channel|
+    log "Adding channel: #{os_product_version_channel}"
+    command = "spacewalk-common-channels -u admin -p admin -a #{architecture} #{os_product_version_channel.gsub("-#{architecture}", '')}"
+    get_target('server').run(command)
+  end
 end
 
 When(/^I use spacewalk-repo-sync to sync channel "([^"]*)"$/) do |channel|
@@ -298,40 +309,6 @@ When(/^I wait until "([^"]*)" exporter service is active on "([^"]*)"$/) do |ser
   node.run_until_ok(cmd)
 end
 
-When(/^I enable product "([^"]*)"$/) do |prd|
-  list_output, _code = get_target('server').run('mgr-sync list products', check_errors: false, buffer_size: 1_000_000)
-  executed = false
-  linenum = 0
-  list_output.each_line do |line|
-    next unless /^ *\[ \]/ =~ line
-
-    linenum += 1
-    next unless line.include? prd
-
-    executed = true
-    $command_output, _code = get_target('server').run("echo '#{linenum}' | mgr-sync add product", check_errors: false, buffer_size: 1_000_000)
-    break
-  end
-  raise $command_output.to_s unless executed
-end
-
-When(/^I enable product "([^"]*)" without recommended$/) do |prd|
-  list_output, _code = get_target('server').run('mgr-sync list products', check_errors: false, buffer_size: 1_000_000)
-  executed = false
-  linenum = 0
-  list_output.each_line do |line|
-    next unless /^ *\[ \]/ =~ line
-
-    linenum += 1
-    next unless line.include? prd
-
-    executed = true
-    $command_output, _code = get_target('server').run("echo '#{linenum}' | mgr-sync add product --no-recommends", check_errors: false, buffer_size: 1_000_000)
-    break
-  end
-  raise $command_output.to_s unless executed
-end
-
 When(/^I execute mgr-sync "([^"]*)" with user "([^"]*)" and password "([^"]*)"$/) do |arg1, u, p|
   get_target('server').run("echo -e \'mgrsync.user = \"#{u}\"\nmgrsync.password = \"#{p}\"\n\' > ~/.mgr-sync")
   $command_output, _code = get_target('server').run("echo -e '#{u}\n#{p}\n' | mgr-sync #{arg1}", check_errors: false, buffer_size: 1_000_000)
@@ -357,9 +334,9 @@ end
 # This function kills spacewalk-repo-sync processes for a particular OS product version.
 # It waits for all the reposyncs in the allow-list to complete, and kills all others.
 When(/^I kill running spacewalk-repo-sync for "([^"]*)"$/) do |os_product_version|
-  next if CHANNEL_TO_SYNCH_BY_OS_PRODUCT_VERSION[os_product_version].nil?
+  next if CHANNEL_TO_SYNC_BY_OS_PRODUCT_VERSION.dig(product, os_product_version).nil?
 
-  channels_to_kill = sanitize_client_tools(CHANNEL_TO_SYNCH_BY_OS_PRODUCT_VERSION[os_product_version])
+  channels_to_kill = CHANNEL_TO_SYNC_BY_OS_PRODUCT_VERSION[product][os_product_version]
   log "Killing channels:\n#{channels_to_kill}"
   time_spent = 0
   checking_rate = 10
@@ -374,7 +351,7 @@ When(/^I kill running spacewalk-repo-sync for "([^"]*)"$/) do |os_product_versio
     end
     channel = process.split[5].strip
     log "Repo-sync process for channel '#{channel}' running." if Time.now.sec % 5
-    next unless CHANNEL_TO_SYNCH_BY_OS_PRODUCT_VERSION[os_product_version].include? channel
+    next unless CHANNEL_TO_SYNC_BY_OS_PRODUCT_VERSION[product][os_product_version].include? channel
 
     channels_to_kill.delete(channel)
     pid = process.split[0]
@@ -422,11 +399,17 @@ end
 When(/^I wait until the channel "([^"]*)" has been synced$/) do |channel|
   time_spent = 0
   checking_rate = 10
+  if TIMEOUT_BY_CHANNEL_NAME[channel].nil?
+    log "Unknown timeout for channel #{channel}, assuming one minute"
+    timeout = 60
+  else
+    timeout = TIMEOUT_BY_CHANNEL_NAME[channel]
+  end
   begin
-    repeat_until_timeout(timeout: 9000, message: 'Channel not fully synced') do
+    repeat_until_timeout(timeout: timeout, message: 'Channel not fully synced') do
       break if channel_is_synced(channel)
 
-      log "#{time_spent / 60.to_i} minutes waiting for '#{channel}' channel to be synchronized." if ((time_spent += checking_rate) % 60).zero?
+      log "#{time_spent / 60.to_i} minutes out of #{timeout / 60.to_i} waiting for '#{channel}' channel to be synchronized" if ((time_spent += checking_rate) % 60).zero?
       sleep checking_rate
     end
   rescue StandardError => e
@@ -434,17 +417,37 @@ When(/^I wait until the channel "([^"]*)" has been synced$/) do |channel|
   end
 end
 
-When(/^I wait until all synchronized channels have finished$/) do
-  $channels_synchronized.each do |channel|
-    log "I wait until '#{channel}' synchronized channel has finished"
-    step %(I wait until the channel "#{channel}" has been synced)
-  end
-end
+When(/^I wait until all synchronized channels for "([^"]*)" have finished$/) do |os_product_version|
+  channels_to_wait = CHANNEL_TO_SYNC_BY_OS_PRODUCT_VERSION.dig(product, os_product_version)
+  raise ScriptError, "Synchronization error, version type #{os_product_version} in #{product} product not found" if channels_to_wait.nil?
 
-When(/^I wait until all synchronized channels for "([^"]*)" have finished$/) do |product_os_version|
-  channels_to_wait = sanitize_client_tools(CHANNEL_TO_SYNCH_BY_OS_PRODUCT_VERSION[product_os_version])
+  time_spent = 0
+  checking_rate = 10
+  timeout = 0
   channels_to_wait.each do |channel|
-    step %(I wait until the channel "#{channel}" has been synced)
+    if TIMEOUT_BY_CHANNEL_NAME[channel].nil?
+      log "Unknown timeout for channel #{channel}, assuming one minute"
+      timeout += 60
+    else
+      timeout += TIMEOUT_BY_CHANNEL_NAME[channel]
+    end
+  end
+  begin
+    repeat_until_timeout(timeout: timeout, message: 'Product not fully synced') do
+      break if channels_to_wait.empty?
+
+      channels_to_wait.each do |channel|
+        if channel_is_synced(channel)
+          channels_to_wait.delete(channel)
+          log "Channel #{channel} finished syncing"
+        end
+      end
+
+      log "#{time_spent / 60.to_i} minutes out of #{timeout / 60.to_i} waiting for '#{os_product_version}' channels to be synchronized" if ((time_spent += checking_rate) % 60).zero?
+      sleep checking_rate
+    end
+  rescue StandardError => e
+    log e.message # It might be that the MU repository is wrong, but we want to continue in any case
   end
 end
 
@@ -649,9 +652,9 @@ When(/^I configure tftp on the "([^"]*)"$/) do |host|
 
   case host
   when 'server'
-    get_target('server').run("configure-tftpsync.sh #{get_target('proxy').full_hostname}")
+    get_target('server').run("/usr/sbin/configure-tftpsync.sh #{get_target('proxy').full_hostname}")
   when 'proxy'
-    cmd = "configure-tftpsync.sh --non-interactive --tftpbootdir=/srv/tftpboot \
+    cmd = "/usr/sbin/configure-tftpsync.sh --non-interactive --tftpbootdir=/srv/tftpboot \
 --server-fqdn=#{get_target('server').full_hostname} \
 --proxy-fqdn='proxy.example.org'"
     get_target('proxy').run(cmd)
@@ -1312,7 +1315,7 @@ Given(/^I have a user with admin access to the ReportDB$/) do
   raise SystemCallError, 'Couldn\'t connect to the ReportDB on the server' unless return_code.zero?
 
   # extract only the line for the suma user
-  suma_user_permissions = users_and_permissions[/pythia_susemanager(.*)}/]
+  suma_user_permissions = users_and_permissions[/pythia_susemanager(.*)/]
   raise ScriptError, 'ReportDB admin user pythia_susemanager doesn\'t have the required permissions' unless
     ['Superuser', 'Create role', 'Create DB'].all? { |permission| suma_user_permissions.include? permission }
 end
