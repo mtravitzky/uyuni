@@ -87,6 +87,7 @@ public class Action extends BaseDomainHelper implements Serializable, WebSocketA
     protected static final Logger LOG = LogManager.getLogger(Action.class);
 
     public static final Integer NAME_LENGTH_LIMIT = 128;
+    public static final Integer COMMENT_LENGTH_LIMIT = 1024;
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -98,6 +99,9 @@ public class Action extends BaseDomainHelper implements Serializable, WebSocketA
 
     @Column
     private String name;
+    
+    @Column
+    private String comment;
 
     @Column(name = "earliest_action")
     private Date earliestAction;
@@ -184,6 +188,25 @@ public class Action extends BaseDomainHelper implements Serializable, WebSocketA
     public void setName(String nameIn) {
         if (nameIn != null) {
             this.name = StringUtil.getBytesTruncatedString(nameIn, NAME_LENGTH_LIMIT);
+        }
+    }
+
+    /**
+     * Getter for comment
+     * @return String to get
+    */
+    public String getComment() {
+        if (this.comment == null) return "";
+        return this.comment;
+    }
+
+    /**
+     * Setter for name
+     * @param commentIn to set
+    */
+    public void setComment(String commentIn) {
+        if (commentIn != null) {
+            this.comment = StringUtil.getBytesTruncatedString(commentIn, COMMENT_LENGTH_LIMIT);
         }
     }
 
@@ -409,6 +432,7 @@ public class Action extends BaseDomainHelper implements Serializable, WebSocketA
                                   .append(this.getOrg(), castOther.getOrg())
                                   .append(this.getName(), castOther.getName())
                                   .append(this.getEarliestAction(), castOther.getEarliestAction())
+                                  .append(this.getComment(), castOther.getComment())
                                   .append(this.getVersion(), castOther.getVersion())
                                   .append(this.getArchived(), castOther.getArchived())
                                   .append(this.getPrerequisite(), castOther.getPrerequisite())
@@ -423,6 +447,7 @@ public class Action extends BaseDomainHelper implements Serializable, WebSocketA
     public int hashCode() {
         return new HashCodeBuilder().append(this.getId()).append(this.getOrg())
                                     .append(this.getName())
+                                    .append(this.getComment())
                                     .append(this.getEarliestAction())
                                     .append(this.getVersion())
                                     .append(this.getArchived())
